@@ -39,13 +39,12 @@ lr_config = dict(_delete_=True, policy='poly',
 
 # By default, models are trained on 8 GPUs with 2 images per GPU
 data = dict(samples_per_gpu=2)
-#runner = dict(type='IterBasedRunner', max_iters=16)
-#checkpoint_config = dict(by_epoch=False, interval=8)
-# # yapf:disable
-# log_config = dict(
-#     interval=4,
-#     hooks=[
-#         dict(type='TextLoggerHook', by_epoch=False),
-#         # dict(type='TensorboardLoggerHook')
-#     ]
-# )
+runner = dict(type='IterBasedRunner', max_iters=16)
+checkpoint_config = dict(by_epoch=False, interval=16)
+log_config = dict(
+    interval=4,
+    hooks=[
+        dict(type='TextLoggerHook', by_epoch=False),
+        # dict(type='TensorboardLoggerHook')
+    ]
+)
