@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from mmcv.cnn import ConvModule
+import torch.nn.functional as F
 
 from mmseg.ops import resize
 from ..builder import HEADS
@@ -23,104 +24,50 @@ class UPerHead(BaseDecodeHead):
     def __init__(self, pool_scales=(1, 2, 3, 6), **kwargs):
         super(UPerHead, self).__init__(
             input_transform='multiple_select', **kwargs)
-        # PSP Module
-        self.psp_modules = PPM(
-            pool_scales,
-            self.in_channels[-1],
-            self.channels,
-            conv_cfg=self.conv_cfg,
-            norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg,
-            align_corners=self.align_corners)
-        self.bottleneck = ConvModule(
-            self.in_channels[-1] + len(pool_scales) * self.channels,
-            self.channels,
-            3,
-            padding=1,
-            conv_cfg=self.conv_cfg,
-            norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg)
-        # FPN Module
-        self.lateral_convs = nn.ModuleList()
-        self.fpn_convs = nn.ModuleList()
-        for in_channels in self.in_channels[:-1]:  # skip the top layer
-            l_conv = ConvModule(
-                in_channels,
-                self.channels,
-                1,
-                conv_cfg=self.conv_cfg,
-                norm_cfg=self.norm_cfg,
-                act_cfg=self.act_cfg,
-                inplace=False)
-            fpn_conv = ConvModule(
-                self.channels,
-                self.channels,
-                3,
-                padding=1,
-                conv_cfg=self.conv_cfg,
-                norm_cfg=self.norm_cfg,
-                act_cfg=self.act_cfg,
-                inplace=False)
-            self.lateral_convs.append(l_conv)
-            self.fpn_convs.append(fpn_conv)
+        out_channels = 512
+        upsample_skip_convs = 3
+        upsample_convs = 1
 
-        self.fpn_bottleneck = ConvModule(
-            len(self.in_channels) * self.channels,
-            self.channels,
-            3,
-            padding=1,
-            conv_cfg=self.conv_cfg,
-            norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg)
+        # TODO use syncbatchnorm
 
-    def psp_forward(self, inputs):
-        """Forward function of PSP module."""
-        x = inputs[-1]
-        psp_outs = [x]
-        psp_outs.extend(self.psp_modules(x))
-        psp_outs = torch.cat(psp_outs, dim=1)
-        output = self.bottleneck(psp_outs)
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(768, out_channels, 3, 1, 1),
+            nn.SyncBatchNorm2d(out_channels),
+            nn.ReLU(True),
+        )
 
-        return output
+        num_channels = [96, 192, 384, 768]
+
+        self.upsample_skip_convs = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(num_channels[-i], out_channels, 3, 1, 1),
+                nn.SyncBatchNorm2d(out_channels),
+                nn.ReLU(True),
+            )
+            for i in range(2, upsample_skip_convs + 2)
+        )
+
+        self.upsample_convs = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+                nn.SyncBatchNorm2d(out_channels),
+                nn.ReLU(True),
+            )
+            for _ in range(upsample_convs)
+        )
 
     def forward(self, inputs):
         """Forward function."""
 
-        inputs = self._transform_inputs(inputs)
+        xs = self._transform_inputs(inputs)
 
-        # build laterals
-        laterals = [
-            lateral_conv(inputs[i])
-            for i, lateral_conv in enumerate(self.lateral_convs)
-        ]
+        x = self.conv1(xs[-1])
 
-        laterals.append(self.psp_forward(inputs))
+        for i, conv in enumerate(self.upsample_skip_convs):
+            prev_shape = xs[-(i + 2)].shape[2:4]
+            x = conv(xs[-(i + 2)]) + F.interpolate(x, size=prev_shape, mode='bilinear', align_corners=False)
 
-        # build top-down path
-        used_backbone_levels = len(laterals)
-        for i in range(used_backbone_levels - 1, 0, -1):
-            prev_shape = laterals[i - 1].shape[2:]
-            laterals[i - 1] += resize(
-                laterals[i],
-                size=prev_shape,
-                mode='bilinear',
-                align_corners=self.align_corners)
-
-        # build outputs
-        fpn_outs = [
-            self.fpn_convs[i](laterals[i])
-            for i in range(used_backbone_levels - 1)
-        ]
-        # append psp feature
-        fpn_outs.append(laterals[-1])
-
-        for i in range(used_backbone_levels - 1, 0, -1):
-            fpn_outs[i] = resize(
-                fpn_outs[i],
-                size=fpn_outs[0].shape[2:],
-                mode='bilinear',
-                align_corners=self.align_corners)
-        fpn_outs = torch.cat(fpn_outs, dim=1)
-        output = self.fpn_bottleneck(fpn_outs)
-        output = self.cls_seg(output)
+        for conv in self.upsample_convs:
+            x = conv(F.interpolate(x, scale_factor=2., mode='bilinear', align_corners=False))
+        output = self.cls_seg(x)
         return output
