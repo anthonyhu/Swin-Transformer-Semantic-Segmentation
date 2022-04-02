@@ -4,6 +4,7 @@ _base_ = [
 ]
 norm_cfg = dict(_delete_=True, type='BN', requires_grad=True)
 model = dict(
+    pretrained='./pretrained/swin_tiny_patch4_window7_224.pth',
     backbone=dict(
         embed_dim=96,
         depths=[2, 2, 6, 2],
