@@ -32,7 +32,7 @@ class UPerHead(BaseDecodeHead):
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(768, out_channels, 3, 1, 1),
-            nn.SyncBatchNorm2d(out_channels),
+            nn.SyncBatchNorm(out_channels),
             nn.ReLU(True),
         )
 
@@ -41,7 +41,7 @@ class UPerHead(BaseDecodeHead):
         self.upsample_skip_convs = nn.ModuleList(
             nn.Sequential(
                 nn.Conv2d(num_channels[-i], out_channels, 3, 1, 1),
-                nn.SyncBatchNorm2d(out_channels),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(True),
             )
             for i in range(2, upsample_skip_convs + 2)
@@ -50,7 +50,7 @@ class UPerHead(BaseDecodeHead):
         self.upsample_convs = nn.ModuleList(
             nn.Sequential(
                 nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-                nn.SyncBatchNorm2d(out_channels),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(True),
             )
             for _ in range(upsample_convs)
