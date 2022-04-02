@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import timm
 
 from mmseg.core import add_prefix
 from mmseg.ops import resize
@@ -27,7 +28,8 @@ class EncoderDecoder(BaseSegmentor):
                  test_cfg=None,
                  pretrained=None):
         super(EncoderDecoder, self).__init__()
-        self.backbone = builder.build_backbone(backbone)
+        self.backbone = timm.create_model('resnet18', pretrained=True, features_only=True,
+                                              out_indices=[1, 2, 3, 4])
         if neck is not None:
             self.neck = builder.build_neck(neck)
         self._init_decode_head(decode_head)
@@ -65,7 +67,7 @@ class EncoderDecoder(BaseSegmentor):
         """
 
         super(EncoderDecoder, self).init_weights(pretrained)
-        self.backbone.init_weights(pretrained=pretrained)
+        #self.backbone.init_weights(pretrained=pretrained)
         self.decode_head.init_weights()
         if self.with_auxiliary_head:
             if isinstance(self.auxiliary_head, nn.ModuleList):

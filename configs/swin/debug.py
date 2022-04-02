@@ -4,7 +4,6 @@ _base_ = [
 ]
 norm_cfg = dict(_delete_=True, type='BN', requires_grad=True)
 model = dict(
-    pretrained='./pretrained/swin_tiny_patch4_window7_224.pth',
     backbone=dict(
         embed_dim=96,
         depths=[2, 2, 6, 2],
@@ -16,12 +15,12 @@ model = dict(
         use_checkpoint=False
     ),
     decode_head=dict(
-        in_channels=[96, 192, 384, 768],
+        in_channels=[64, 128, 256, 512],
         num_classes=150,
         norm_cfg=norm_cfg,
     ),
     auxiliary_head=dict(
-        in_channels=384,
+        in_channels=256,
         num_classes=150,
         norm_cfg=norm_cfg,
     ))
