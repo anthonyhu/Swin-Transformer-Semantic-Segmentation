@@ -42,6 +42,7 @@ lr_config = dict(_delete_=True, policy='poly',
 data = dict(samples_per_gpu=2)
 runner = dict(type='IterBasedRunner', max_iters=16)
 checkpoint_config = dict(by_epoch=False, interval=16)
+evaluation = dict(interval=16, metric='mIoU')
 log_config = dict(
     interval=4,
     hooks=[
