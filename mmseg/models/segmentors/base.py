@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+import matplotlib.pyplot as plt
 from mmcv.runner import auto_fp16
 
 
@@ -259,7 +260,7 @@ class BaseSegmentor(nn.Module):
             show = False
 
         if show:
-            mmcv.imshow(img, win_name, wait_time)
+            plt.imshow(img)
         if out_file is not None:
             mmcv.imwrite(img, out_file)
 
