@@ -150,7 +150,7 @@ class EncoderDecoder(BaseSegmentor):
             dict[str, Tensor]: a dictionary of loss components
         """
 
-        x = self.extract_feat(img)
+        x, attention_weights = self.extract_feat(img)
 
         losses = dict()
 

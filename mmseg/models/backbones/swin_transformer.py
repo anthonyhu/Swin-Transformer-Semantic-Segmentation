@@ -616,7 +616,7 @@ class SwinTransformer(nn.Module):
         else:
             raise TypeError('pretrained must be a str or None')
 
-    def forward(self, x, return_attention=True):
+    def forward(self, x, return_attention=False):
         """Forward function."""
         x = self.patch_embed(x)
 
