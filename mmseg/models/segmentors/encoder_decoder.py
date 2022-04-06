@@ -74,24 +74,24 @@ class EncoderDecoder(BaseSegmentor):
             else:
                 self.auxiliary_head.init_weights()
 
-    def extract_feat(self, img, return_attention=False):
+    def extract_feat(self, img):
         """Extract features from images."""
-        x, attention_weights = self.backbone(img, return_attention=return_attention)
+        x = self.backbone(img)
         if self.with_neck:
             x = self.neck(x)
-        return x, attention_weights
+        return x
 
-    def encode_decode(self, img, img_metas, return_attention=False):
+    def encode_decode(self, img, img_metas):
         """Encode images with backbone and decode into a semantic segmentation
         map of the same size as input."""
-        x, attention_weights = self.extract_feat(img, return_attention=return_attention)
+        x = self.extract_feat(img)
         out = self._decode_head_forward_test(x, img_metas)
         out = resize(
             input=out,
             size=img.shape[2:],
             mode='bilinear',
             align_corners=self.align_corners)
-        return out, attention_weights
+        return out
 
     def _decode_head_forward_train(self, x, img_metas, gt_semantic_seg):
         """Run forward function and calculate loss for decode head in
@@ -211,10 +211,10 @@ class EncoderDecoder(BaseSegmentor):
                 warning=False)
         return preds
 
-    def whole_inference(self, img, img_meta, rescale, return_attention=False):
+    def whole_inference(self, img, img_meta, rescale):
         """Inference with full image."""
 
-        seg_logit, attention_weights = self.encode_decode(img, img_meta, return_attention=return_attention)
+        seg_logit = self.encode_decode(img, img_meta)
         if rescale:
             seg_logit = resize(
                 seg_logit,
@@ -223,9 +223,9 @@ class EncoderDecoder(BaseSegmentor):
                 align_corners=self.align_corners,
                 warning=False)
 
-        return seg_logit, attention_weights
+        return seg_logit
 
-    def inference(self, img, img_meta, rescale, return_attention=False):
+    def inference(self, img, img_meta, rescale):
         """Inference with slide/whole style.
 
         Args:
@@ -245,15 +245,12 @@ class EncoderDecoder(BaseSegmentor):
         ori_shape = img_meta[0]['ori_shape']
         assert all(_['ori_shape'] == ori_shape for _ in img_meta)
         if self.test_cfg.mode == 'slide':
-            assert not return_attention
-            seg_logit, attention_weights = self.slide_inference(img, img_meta, rescale)
+            seg_logit = self.slide_inference(img, img_meta, rescale)
         else:
-            seg_logit, attention_weights = self.whole_inference(img, img_meta, rescale,
-                                                               return_attention=return_attention)
+            seg_logit = self.whole_inference(img, img_meta, rescale)
         output = F.softmax(seg_logit, dim=1)
         flip = img_meta[0]['flip']
         if flip:
-
             flip_direction = img_meta[0]['flip_direction']
             assert flip_direction in ['horizontal', 'vertical']
             if flip_direction == 'horizontal':
@@ -261,20 +258,20 @@ class EncoderDecoder(BaseSegmentor):
             elif flip_direction == 'vertical':
                 output = output.flip(dims=(2, ))
 
-        return output, attention_weights
+        return output
 
-    def simple_test(self, img, img_meta, rescale=True, return_attention=False):
+    def simple_test(self, img, img_meta, rescale=True):
         """Simple test with single image."""
-        seg_logit, attention_weights = self.inference(img, img_meta, rescale, return_attention=return_attention)
+        seg_logit = self.inference(img, img_meta, rescale)
         seg_pred = seg_logit.argmax(dim=1)
         if torch.onnx.is_in_onnx_export():
             # our inference backend only support 4D output
             seg_pred = seg_pred.unsqueeze(0)
-            return seg_pred, attention_weights
+            return seg_pred
         seg_pred = seg_pred.cpu().numpy()
         # unravel batch dim
         seg_pred = list(seg_pred)
-        return seg_pred, attention_weights
+        return seg_pred
 
     def aug_test(self, imgs, img_metas, rescale=True):
         """Test with augmentations.

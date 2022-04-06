@@ -118,7 +118,7 @@ class WindowAttention(nn.Module):
         trunc_normal_(self.relative_position_bias_table, std=.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask=None, return_attention=False):
+    def forward(self, x, mask=None):
         """ Forward function.
 
         Args:
@@ -150,10 +150,7 @@ class WindowAttention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-
-        if not return_attention:
-            attn = None
-        return x, attn
+        return x
 
 
 class SwinTransformerBlock(nn.Module):
@@ -198,7 +195,7 @@ class SwinTransformerBlock(nn.Module):
         self.H = None
         self.W = None
 
-    def forward(self, x, mask_matrix, return_attention=False):
+    def forward(self, x, mask_matrix):
         """ Forward function.
 
         Args:
@@ -233,8 +230,8 @@ class SwinTransformerBlock(nn.Module):
         x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
-        # W-MSA/SW-MSA, (nW*B, window_size*window_size, C)
-        attn_windows, attention_weights = self.attn(x_windows, mask=attn_mask, return_attention=return_attention)
+        # W-MSA/SW-MSA
+        attn_windows = self.attn(x_windows, mask=attn_mask)  # nW*B, window_size*window_size, C
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
@@ -249,26 +246,13 @@ class SwinTransformerBlock(nn.Module):
         if pad_r > 0 or pad_b > 0:
             x = x[:, :H, :W, :].contiguous()
 
-        if return_attention:
-            # Average attention across different heads
-            attention_weights = attention_weights.mean(dim=1)
-            attention_weights = attention_weights.view(-1, self.window_size, self.window_size, self.window_size**2)
-            attention_weights = window_reverse(attention_weights, self.window_size, Hp, Wp)
-
-            if self.shift_size > 0:
-                attention_weights = torch.roll(attention_weights, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
-            if pad_r > 0 or pad_b > 0:
-                attention_weights = attention_weights[:, :H, :W, :].contiguous()
-
-            attention_weights = attention_weights.mean(dim=-1)
-
         x = x.view(B, H * W, C)
 
         # FFN
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        return x, attention_weights
+        return x
 
 
 class PatchMerging(nn.Module):
@@ -375,7 +359,7 @@ class BasicLayer(nn.Module):
         else:
             self.downsample = None
 
-    def forward(self, x, H, W, return_attention=False):
+    def forward(self, x, H, W):
         """ Forward function.
 
         Args:
@@ -404,21 +388,18 @@ class BasicLayer(nn.Module):
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
         attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
 
-        attention_list = []
         for blk in self.blocks:
             blk.H, blk.W = H, W
             if self.use_checkpoint:
-                x, attention_weights = checkpoint.checkpoint(blk, x, attn_mask, return_attention=return_attention)
+                x = checkpoint.checkpoint(blk, x, attn_mask)
             else:
-                x, attention_weights = blk(x, attn_mask, return_attention=return_attention)
-
-            attention_list.append(attention_weights)
+                x = blk(x, attn_mask)
         if self.downsample is not None:
             x_down = self.downsample(x, H, W)
             Wh, Ww = (H + 1) // 2, (W + 1) // 2
-            return x, H, W, x_down, Wh, Ww, attention_list
+            return x, H, W, x_down, Wh, Ww
         else:
-            return x, H, W, x, H, W, attention_list
+            return x, H, W, x, H, W
 
 
 class PatchEmbed(nn.Module):
@@ -616,7 +597,7 @@ class SwinTransformer(nn.Module):
         else:
             raise TypeError('pretrained must be a str or None')
 
-    def forward(self, x, return_attention=True):
+    def forward(self, x):
         """Forward function."""
         x = self.patch_embed(x)
 
@@ -630,10 +611,9 @@ class SwinTransformer(nn.Module):
         x = self.pos_drop(x)
 
         outs = []
-        attention_list = []
         for i in range(self.num_layers):
             layer = self.layers[i]
-            x_out, H, W, x, Wh, Ww, attention_weights = layer(x, Wh, Ww, return_attention=return_attention)
+            x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
 
             if i in self.out_indices:
                 norm_layer = getattr(self, f'norm{i}')
@@ -641,9 +621,8 @@ class SwinTransformer(nn.Module):
 
                 out = x_out.view(-1, H, W, self.num_features[i]).permute(0, 3, 1, 2).contiguous()
                 outs.append(out)
-                attention_list.append(attention_weights)
 
-        return tuple(outs), tuple(attention_list)
+        return tuple(outs)
 
     def train(self, mode=True):
         """Convert the model into training mode while keep layers freezed."""
