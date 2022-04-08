@@ -14,11 +14,11 @@ model = dict(
         use_checkpoint=False
     ),
     decode_head=dict(
-        in_channels=[64, 128, 256, 512],
+        in_channels=[256, 512, 1024, 2048],
         num_classes=150
     ),
     auxiliary_head=dict(
-        in_channels=256,
+        in_channels=1024,
         num_classes=150
     ))
 

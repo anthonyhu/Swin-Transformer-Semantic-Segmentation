@@ -28,7 +28,7 @@ class EncoderDecoder(BaseSegmentor):
                  test_cfg=None,
                  pretrained=None):
         super(EncoderDecoder, self).__init__()
-        self.backbone = timm.create_model('resnet18', pretrained=True, features_only=True,
+        self.backbone = timm.create_model('resnet50', pretrained=True, features_only=True,
                                               out_indices=[1, 2, 3, 4])
         if neck is not None:
             self.neck = builder.build_neck(neck)
